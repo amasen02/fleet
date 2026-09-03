@@ -39,7 +39,10 @@ import {
   INumberCellProps,
 } from "interfaces/datatable_config";
 import PATHS from "router/paths";
-import { DEFAULT_EMPTY_CELL_VALUE } from "utilities/constants";
+import {
+  DEFAULT_EMPTY_CELL_VALUE,
+  INITIAL_FLEET_DATE,
+} from "utilities/constants";
 import { getHardwareModelDisplay, getHostStatusTooltipText } from "../helpers";
 
 type IHostTableColumnConfig = Column<IHost> & {
@@ -57,6 +60,9 @@ type IHostTableNumberCellProps = INumberCellProps<IHost>;
 type ISelectionCellProps = CellProps<IHost>;
 type IIssuesCellProps = CellProps<IHost, IHost["issues"]>;
 type IDeviceUserCellProps = CellProps<IHost, IHost["device_mapping"]>;
+
+const NEVER_FETCHED_TOOLTIP =
+  "This host has not reported vitals yet, even if it has checked in.";
 
 const condenseDeviceUsers = (users: IDeviceUser[]): string[] => {
   if (!users?.length) {
@@ -297,13 +303,34 @@ const allHostTableHeaders = (teamId?: number): IHostTableColumnConfig[] => [
     },
     accessor: "detail_updated_at",
     id: "detail_updated_at",
-    Cell: (cellProps: IHostTableStringCellProps) => (
+    Cell: (cellProps: IHostTableStringCellProps) => {
+      const detailUpdatedAt = cellProps.cell.value;
+
+      // A host that has never reported vitals keeps the server's "never"
+      // sentinel timestamp, which renders as "Never" next to a real "Last
+      // seen" date. Explain the pairing rather than leave it looking broken.
+      if (detailUpdatedAt && detailUpdatedAt < INITIAL_FLEET_DATE) {
+        return (
+          <TextCell
+            value={
+              <TooltipWrapper tipContent={NEVER_FETCHED_TOOLTIP}>
+                <HumanTimeDiffWithFleetLaunchCutoff
+                  timeString={detailUpdatedAt}
+                />
+              </TooltipWrapper>
+            }
+          />
+        );
+      }
+
       // TODO(android): android doesn't support refetch?
-      <TextCell
-        value={{ timeString: cellProps.cell.value }}
-        formatter={HumanTimeDiffWithFleetLaunchCutoff}
-      />
-    ),
+      return (
+        <TextCell
+          value={{ timeString: detailUpdatedAt }}
+          formatter={HumanTimeDiffWithFleetLaunchCutoff}
+        />
+      );
+    },
   },
   // Disk space available
   {

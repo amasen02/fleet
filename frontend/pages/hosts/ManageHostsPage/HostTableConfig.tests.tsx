@@ -1,6 +1,8 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 
+import { renderWithSetup } from "test/test-utils";
+
 import { generateAvailableTableHeaders } from "./HostTableConfig";
 
 describe("HostTableConfig - Serial number column", () => {
@@ -68,5 +70,66 @@ describe("HostTableConfig - Serial number column", () => {
   it("shows 'Not supported' for a personal (BYOD) iOS host", () => {
     renderCell("", "ios", { enrollment_status: "On (manual - personal)" });
     expect(screen.getByText("Not supported")).toBeInTheDocument();
+  });
+});
+
+describe("HostTableConfig - Last fetched column", () => {
+  const headers = generateAvailableTableHeaders({
+    isFreeTier: false,
+    isOnlyObserver: false,
+  });
+
+  const lastFetchedColumn = headers.find(
+    (h) => h.id === "detail_updated_at"
+  ) as any;
+
+  if (!lastFetchedColumn || typeof lastFetchedColumn.Cell !== "function") {
+    throw new Error("detail_updated_at column or Cell not found");
+  }
+
+  const Cell = lastFetchedColumn.Cell as React.ElementType;
+
+  const NEVER_FETCHED_TOOLTIP =
+    "This host has not reported vitals yet, even if it has checked in.";
+
+  const renderCell = (detailUpdatedAt: string) =>
+    renderWithSetup(
+      <Cell
+        cell={{ value: detailUpdatedAt }}
+        row={{ original: { platform: "darwin" } }}
+      />
+    );
+
+  it("explains 'Never' for a host that has checked in but never reported vitals", async () => {
+    // Hosts that never report vitals keep the server's "never" sentinel,
+    // which predates Fleet's launch and so renders as "Never".
+    const { user } = renderCell("2000-01-01T00:00:00Z");
+
+    expect(screen.getByText("Never")).toBeInTheDocument();
+
+    await user.hover(screen.getByText("Never"));
+
+    expect(await screen.findByText(NEVER_FETCHED_TOOLTIP)).toBeInTheDocument();
+  });
+
+  it("shows the relative time with no vitals tooltip when the host has reported vitals", async () => {
+    const { user } = renderCell("2024-04-27T12:00:00Z");
+
+    expect(screen.queryByText("Never")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByText(/ago$/));
+
+    expect(screen.queryByText(NEVER_FETCHED_TOOLTIP)).not.toBeInTheDocument();
+  });
+
+  it("shows 'Unavailable' with no vitals tooltip when there is no timestamp", async () => {
+    const { user } = renderCell("");
+
+    const cell = screen.getByText("Unavailable");
+    expect(cell).toBeInTheDocument();
+
+    await user.hover(cell);
+
+    expect(screen.queryByText(NEVER_FETCHED_TOOLTIP)).not.toBeInTheDocument();
   });
 });
